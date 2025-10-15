@@ -1,0 +1,5 @@
+*.bin
+Revision_Log.txt
+*.spec
+dist
+build

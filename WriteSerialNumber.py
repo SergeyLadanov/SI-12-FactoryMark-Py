@@ -4,6 +4,7 @@ import subprocess
 from pathlib import Path
 import os
 import re
+from configparser import ConfigParser
 
 def get_user_input(prompt, default=None):
     """Функция для получения ввода от пользователя с возможностью указания значения по умолчанию"""
@@ -95,7 +96,50 @@ def read_last_line(filename, encoding='utf-8'):
 
 
 
+# Функция для чтения и обработки файла
+def get_serial_from_binary_file():
+    print("Формирование серийного номера из chip id...")
+    # Открываем файл в режиме чтения бинарных данных
+    with open('chip_id.bin', 'rb') as file:
+        # Читаем первые 12 байт (3 числа по 4 байта)
+        data = file.read(12)
+        
+        # Проверяем, что мы прочитали достаточно данных
+        if len(data) != 12:
+            raise ValueError("Недостаточно данных в файле")
+        
+        # Распаковываем данные
+        # 'iii' - три целых числа по 4 байта
+        numbers = struct.unpack('<iii', data)
+        
+        # Вычисляем сумму
+        total_sum = sum(numbers)
+        
+        print(f"Прочитанные числа: {numbers}")
+        print(f"Сумма чисел: {total_sum}")
+        result = total_sum & 0x7fffffff
+        print(f"Серийный номер: {result}")
+
+        return result
+    
+
+
+
 def main():
+
+    # Создание объекта парсера
+    config = ConfigParser()
+
+    # Чтение файла конфигурации
+    config.read('config.ini')
+
+    target_serial_number = 0
+
+    # Получение значений
+    USE_AUTO_INC = config.getboolean('SETTINGS', 'USE_AUTO_INC') 
+    USE_CHIP_ID_SERIAL = config.getboolean('SETTINGS', 'USE_CHIP_ID_SERIAL')
+
+
     # Создаем парсер аргументов
     parser = argparse.ArgumentParser(description='Скрипт для работы с прошивкой')
     
@@ -131,7 +175,7 @@ def main():
     # Парсим аргументы
     args = parser.parse_args()
 
-    if os.path.isfile("Revision_Log.txt"):
+    if os.path.isfile("Revision_Log.txt") and USE_AUTO_INC:
         last_line = read_last_line("Revision_Log.txt")
         last_line = last_line.split(';')
         args.revision = int(last_line[0]) + 1
@@ -141,8 +185,10 @@ def main():
         if not args.revision:
             args.revision = get_user_input('Введите заводской номер (например: 25000000)', None)
 
-        if not args.serial:
-            args.serial = get_user_input('Введите серийный номер (например: 35)', None)
+        if not USE_CHIP_ID_SERIAL:
+            if not args.serial:
+                args.serial = get_user_input('Введите серийный номер (например: 35)', None)
+                target_serial_number = args.serial
     
 
     
@@ -163,7 +209,18 @@ def main():
     print(f"Адрес: {args.address}")
     print(f"Порт: {args.port}")
 
-    # STM32_Programmer_CLI -c port=SWD -r 0x08000000 8 device_info.bin
+    chip_id_addr = 0x1FFF7590
+
+
+
+    if USE_CHIP_ID_SERIAL:
+        # STM32_Programmer_CLI -c port=SWD -r 0x08000000 8 device_info.bin
+        arguments = ["STM32_Programmer_CLI", "-c", f"port={args.port}", "-r", f"{chip_id_addr}", "12", "chip_id.bin"]
+
+        subprocess.run(arguments)
+
+        target_serial_number = get_serial_from_binary_file()
+
 
     arguments = ["STM32_Programmer_CLI", "-c", f"port={args.port}", "-r", f"{args.address}", "8", "device_info.bin"]
 
@@ -177,12 +234,17 @@ def main():
         # 'I' - unsigned int (беззнаковое)
         # '<i' - little-endian (малый порядок байтов)
         # '>i' - big-endian (большой порядок байтов)
-        packed_serial_number = struct.pack('<i', int(args.serial))
+        serial_value = 0xFFFFFFFF
+        if not USE_CHIP_ID_SERIAL:
+            serial_value = target_serial_number
+
         
+        
+        packed_serial_number = struct.pack('<I', int(serial_value))
         # Записываем в файл
         file.write(packed_serial_number)
 
-        packed_rev_number = struct.pack('<i', int(args.revision))
+        packed_rev_number = struct.pack('<I', int(args.revision))
 
         # Записываем в файл
         file.write(packed_rev_number)
@@ -241,8 +303,8 @@ def main():
     if (result.returncode == 0):
         print("Установка успешно завершена")
         with open("Revision_Log.txt", "a+", encoding="utf-8") as file:
-            file.write(f"{args.revision};{args.serial}\n")
-        print(f"Записан серийный номер {args.serial} и заводской номер {args.revision} в файл Revision_Log.txt")
+            file.write(f"{args.revision};{target_serial_number}\n")
+        print(f"Записан серийный номер {target_serial_number} и заводской номер {args.revision} в файл Revision_Log.txt")
     else:
         print("Ошибка при установке")
 
