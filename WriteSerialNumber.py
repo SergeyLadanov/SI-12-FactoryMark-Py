@@ -110,7 +110,7 @@ def get_serial_from_binary_file():
         
         # Распаковываем данные
         # 'iii' - три целых числа по 4 байта
-        numbers = struct.unpack('<iii', data)
+        numbers = struct.unpack('<III', data)
         
         # Вычисляем сумму
         total_sum = sum(numbers)
