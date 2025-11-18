@@ -260,7 +260,7 @@ def main():
         # Записываем в файл
         file.write(packed_rev_number)
 
-        packed_default_scale = struct.pack('<I', int(args.default_scale * 1000.0))
+        packed_default_scale = struct.pack('<I', int(float(args.default_scale) * 1000.0))
 
         # Записываем в файл
         file.write(packed_default_scale)
