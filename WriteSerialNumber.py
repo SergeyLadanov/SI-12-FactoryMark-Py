@@ -171,6 +171,12 @@ def main():
         default='SWD',
         help='Тип порта (SWD, USB1 или JTAG)'
     )
+
+    parser.add_argument(
+        '--default_scale', 
+        type=float, 
+        help='Вес импульсов по умолчанию (0.001-60.000)'
+    )
     
     # Парсим аргументы
     args = parser.parse_args()
@@ -180,10 +186,14 @@ def main():
         last_line = last_line.split(';')
         args.revision = int(last_line[0]) + 1
         args.serial = int(last_line[1]) + 1
+        args.default_scale = float(last_line[2])
     else:
         # Проверяем обязательные параметры и запрашиваем их при отсутствии
         if not args.revision:
             args.revision = get_user_input('Введите заводской номер (например: 25000000)', None)
+
+        if not args.default_scale:
+            args.default_scale = get_user_input('Вес импульсов по умолчанию (0.001-60.000). Нажмите Enter чтобы использовать значение по умолчанию, ', 0.01)
 
         if not USE_CHIP_ID_SERIAL:
             if not args.serial:
@@ -208,6 +218,7 @@ def main():
     print(f"Заводской номер: {args.revision}")
     print(f"Адрес: {args.address}")
     print(f"Порт: {args.port}")
+    print(f"Вес импульса по умолчанию: {args.default_scale}")
 
     chip_id_addr = 0x1FFF7590
 
@@ -248,6 +259,11 @@ def main():
 
         # Записываем в файл
         file.write(packed_rev_number)
+
+        packed_default_scale = struct.pack('<I', int(args.default_scale * 1000.0))
+
+        # Записываем в файл
+        file.write(packed_default_scale)
 
     
 
@@ -303,8 +319,8 @@ def main():
     if (result.returncode == 0):
         print("Установка успешно завершена")
         with open("Revision_Log.txt", "a+", encoding="utf-8") as file:
-            file.write(f"{args.revision};{target_serial_number}\n")
-        print(f"Записан серийный номер {target_serial_number} и заводской номер {args.revision} в файл Revision_Log.txt")
+            file.write(f"{args.revision};{target_serial_number};{args.default_scale}\n")
+        print(f"Записан серийный номер {target_serial_number}, заводской номер {args.revision} и вес импульса по умолчанию {args.default_scale} в файл Revision_Log.txt")
     else:
         print("Ошибка при установке")
 
